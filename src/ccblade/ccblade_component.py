@@ -1,5 +1,5 @@
 from ccblade import CCAirfoil, CCBlade as CCBlade
-from openmdao.api import Component
+from openmdao.api import ExplicitComponent
 import numpy as np
 
 cosd = lambda x: np.cos(np.deg2rad(x))
@@ -10,46 +10,41 @@ sind = lambda x: np.sin(np.deg2rad(x))
 # ---------------------
 
 
-class GeometrySetupBase(Component):
+class GeometrySetupBase(ExplicitComponent):
     """a base component that computes the rotor radius from the geometry"""
-    def __init__(self):
-        super(GeometrySetupBase, self).__init__()
+    def setup(self):
         self.add_output('R', val=0.0, units='m', desc='rotor radius')
 
 # ---------------------
 # Default Implementations of Base Classes
 # ---------------------
 class CCBladeGeometry(GeometrySetupBase):
-    def __init__(self):
-        super(CCBladeGeometry, self).__init__()
-        self.add_param('Rtip', val=0.0, units='m', desc='tip radius')
-        self.add_param('precurveTip', val=0.0, units='m', desc='tip radius')
-        self.add_param('precone', val=0.0, desc='precone angle', units='deg')
+    def setup(self):
+        self.add_input('Rtip', val=0.0, units='m', desc='tip radius')
+        self.add_input('precurveTip', val=0.0, units='m', desc='tip radius')
+        self.add_input('precone', val=0.0, desc='precone angle', units='deg')
         self.add_output('diameter', val=0.0, units='m')
-        
-    def solve_nonlinear(self, params, unknowns, resids):
 
-        self.Rtip = params['Rtip']
-        self.precurveTip = params['precurveTip']
-        self.precone = params['precone']
+        self.declare_partials('R', '*')
+        self.declare_partials('diameter', '*')
+        self.declare_partials('diameter', 'R')
+        
+    def compute(self, inputs, outputs):
+
+        self.Rtip = inputs['Rtip']
+        self.precurveTip = inputs['precurveTip']
+        self.precone = inputs['precone']
 
         self.R = self.Rtip*cosd(self.precone) + self.precurveTip*sind(self.precone)
 
-        unknowns['R'] = self.R
-        unknowns['diameter'] = self.R*2
+        outputs['R'] = self.R
+        outputs['diameter'] = self.R*2
 
-    def list_deriv_vars(self):
-
-        inputs = ('Rtip', 'precurveTip', 'precone')
-        outputs = ('R',)
-
-        return inputs, outputs
-
-    def linearize(self, params, unknowns, resids):
+    def compute_partials(self, inputs, J):
 
         J_sub = np.array([[cosd(self.precone), sind(self.precone),
             (-self.Rtip*sind(self.precone) + self.precurveTip*sind(self.precone))*np.pi/180.0]])
-        J = {}
+
         J['R', 'Rtip'] = J_sub[0][0]
         J['R', 'precurveTip'] = J_sub[0][1]
         J['R', 'precone'] = J_sub[0][2]
@@ -58,18 +53,22 @@ class CCBladeGeometry(GeometrySetupBase):
         J['diameter', 'precone'] = 2.0*J_sub[0][2]
         J['diameter', 'R'] = 2.0
 
-        return J
+        
 
-
-class CCBladePower(Component):
-    def __init__(self, naero, npower):
-        super(CCBladePower, self).__init__()
+class CCBladePower(ExplicitComponent):
+    def initialize(self):
+        self.options.declare('naero')
+        self.options.declare('npower')
+        
+    def setup(self, naero, npower):
+        self.naero = naero = self.options['naero']
+        npower = self.options['npower']
         """blade element momentum code"""
 
         # inputs
-        self.add_param('Uhub', val=np.zeros(npower), units='m/s', desc='hub height wind speed')
-        self.add_param('Omega', val=np.zeros(npower), units='rpm', desc='rotor rotation speed')
-        self.add_param('pitch', val=np.zeros(npower), units='deg', desc='blade pitch setting')
+        self.add_input('Uhub', val=np.zeros(npower), units='m/s', desc='hub height wind speed')
+        self.add_input('Omega', val=np.zeros(npower), units='rpm', desc='rotor rotation speed')
+        self.add_input('pitch', val=np.zeros(npower), units='deg', desc='blade pitch setting')
 
         # outputs
         self.add_output('T', val=np.zeros(npower), units='N', desc='rotor aerodynamic thrust')
@@ -78,62 +77,63 @@ class CCBladePower(Component):
 
         
         # (potential) variables
-        self.add_param('r', val=np.zeros(naero), units='m', desc='radial locations where blade is defined (should be increasing and not go all the way to hub or tip)')
-        self.add_param('chord', val=np.zeros(naero), units='m', desc='chord length at each section')
-        self.add_param('theta', val=np.zeros(naero),  units='deg', desc='twist angle at each section (positive decreases angle of attack)')
-        self.add_param('Rhub', val=0.0, units='m', desc='hub radius')
-        self.add_param('Rtip', val=0.0, units='m', desc='tip radius')
-        self.add_param('hubHt', val=0.0, units='m', desc='hub height')
-        self.add_param('precone', val=0.0, desc='precone angle', units='deg')
-        self.add_param('tilt', val=0.0, desc='shaft tilt', units='deg')
-        self.add_param('yaw', val=0.0, desc='yaw error', units='deg')
+        self.add_input('r', val=np.zeros(naero), units='m', desc='radial locations where blade is defined (should be increasing and not go all the way to hub or tip)')
+        self.add_input('chord', val=np.zeros(naero), units='m', desc='chord length at each section')
+        self.add_input('theta', val=np.zeros(naero),  units='deg', desc='twist angle at each section (positive decreases angle of attack)')
+        self.add_input('Rhub', val=0.0, units='m', desc='hub radius')
+        self.add_input('Rtip', val=0.0, units='m', desc='tip radius')
+        self.add_input('hubHt', val=0.0, units='m', desc='hub height')
+        self.add_input('precone', val=0.0, desc='precone angle', units='deg')
+        self.add_input('tilt', val=0.0, desc='shaft tilt', units='deg')
+        self.add_input('yaw', val=0.0, desc='yaw error', units='deg')
 
         # TODO: I've not hooked up the gradients for these ones yet.
-        self.add_param('precurve', val=np.zeros(naero), units='m', desc='precurve at each section')
-        self.add_param('precurveTip', val=0.0, units='m', desc='precurve at tip')
+        self.add_input('precurve', val=np.zeros(naero), units='m', desc='precurve at each section')
+        self.add_input('precurveTip', val=0.0, units='m', desc='precurve at tip')
 
         # parameters
-        self.add_param('airfoils', val=[0]*naero, desc='CCAirfoil instances', pass_by_obj=True)
-        self.add_param('B', val=0, desc='number of blades', pass_by_obj=True)
-        self.add_param('rho', val=0.0, units='kg/m**3', desc='density of air')
-        self.add_param('mu', val=0.0, units='kg/(m*s)', desc='dynamic viscosity of air')
-        self.add_param('shearExp', val=0.0, desc='shear exponent')
-        self.add_param('nSector', val=4, desc='number of sectors to divide rotor face into in computing thrust and power', pass_by_obj=True)
-        self.add_param('tiploss', val=True, desc='include Prandtl tip loss model', pass_by_obj=True)
-        self.add_param('hubloss', val=True, desc='include Prandtl hub loss model', pass_by_obj=True)
-        self.add_param('wakerotation', val=True, desc='include effect of wake rotation (i.e., tangential induction factor is nonzero)', pass_by_obj=True)
-        self.add_param('usecd', val=True, desc='use drag coefficient in computing induction factors', pass_by_obj=True)
+        self.add_discrete_input('airfoils', val=[0]*naero, desc='CCAirfoil instances')
+        self.add_discrete_input('B', val=0, desc='number of blades')
+        self.add_input('rho', val=0.0, units='kg/m**3', desc='density of air')
+        self.add_input('mu', val=0.0, units='kg/(m*s)', desc='dynamic viscosity of air')
+        self.add_input('shearExp', val=0.0, desc='shear exponent')
+        self.add_discrete_input('nSector', val=4, desc='number of sectors to divide rotor face into in computing thrust and power')
+        self.add_discrete_input('tiploss', val=True, desc='include Prandtl tip loss model')
+        self.add_discrete_input('hubloss', val=True, desc='include Prandtl hub loss model')
+        self.add_discrete_input('wakerotation', val=True, desc='include effect of wake rotation (i.e., tangential induction factor is nonzero)')
+        self.add_discrete_input('usecd', val=True, desc='use drag coefficient in computing induction factors')
 
-        self.naero = naero
-        self.deriv_options['form'] = 'central'
-        self.deriv_options['step_calc'] = 'relative'
+        self.declare_partials(['P', 'T', 'Q'],['precone', 'tilt', 'hubHt', 'Rhub', 'Rtip', 'yaw',
+                                               'Uhub', 'Omega', 'pitch', 'r', 'chord', 'theta',
+                                               'precurve', 'precurveTip')])
+
         
-    def solve_nonlinear(self, params, unknowns, resids):
+    def compute(self, inputs, outputs):
 
-        self.r = params['r']
-        self.chord = params['chord']
-        self.theta = params['theta']
-        self.Rhub = params['Rhub']
-        self.Rtip = params['Rtip']
-        self.hubHt = params['hubHt']
-        self.precone = params['precone']
-        self.tilt = params['tilt']
-        self.yaw = params['yaw']
-        self.precurve = params['precurve']
-        self.precurveTip = params['precurveTip']
-        self.airfoils = params['airfoils']
-        self.B = params['B']
-        self.rho = params['rho']
-        self.mu = params['mu']
-        self.shearExp = params['shearExp']
-        self.nSector = params['nSector']
-        self.tiploss = params['tiploss']
-        self.hubloss = params['hubloss']
-        self.wakerotation = params['wakerotation']
-        self.usecd = params['usecd']
-        self.Uhub = params['Uhub']
-        self.Omega = params['Omega']
-        self.pitch = params['pitch']
+        self.r = inputs['r']
+        self.chord = inputs['chord']
+        self.theta = inputs['theta']
+        self.Rhub = inputs['Rhub']
+        self.Rtip = inputs['Rtip']
+        self.hubHt = inputs['hubHt']
+        self.precone = inputs['precone']
+        self.tilt = inputs['tilt']
+        self.yaw = inputs['yaw']
+        self.precurve = inputs['precurve']
+        self.precurveTip = inputs['precurveTip']
+        self.airfoils = discrete_inputs['airfoils']
+        self.B = discrete_inputs['B']
+        self.rho = inputs['rho']
+        self.mu = inputs['mu']
+        self.shearExp = inputs['shearExp']
+        self.nSector = discrete_inputs['nSector']
+        self.tiploss = discrete_inputs['tiploss']
+        self.hubloss = discrete_inputs['hubloss']
+        self.wakerotation = discrete_inputs['wakerotation']
+        self.usecd = discrete_inputs['usecd']
+        self.Uhub = inputs['Uhub']
+        self.Omega = inputs['Omega']
+        self.pitch = inputs['pitch']
         
         self.ccblade = CCBlade(self.r, self.chord, self.theta, self.airfoils, self.Rhub, self.Rtip, self.B,
             self.rho, self.mu, self.precone, self.tilt, self.yaw, self.shearExp, self.hubHt,
@@ -143,26 +143,17 @@ class CCBladePower(Component):
         # power, thrust, torque
         self.P, self.T, self.Q, self.M, self.dP, self.dT, self.dQ \
             = self.ccblade.evaluate(self.Uhub, self.Omega, self.pitch, coefficients=False)
-        unknowns['T'] = self.T
-        unknowns['Q'] = self.Q
-        unknowns['P'] = self.P
-        
-
-    def list_deriv_vars(self):
-
-        inputs = ('precone', 'tilt', 'hubHt', 'Rhub', 'Rtip', 'yaw',
-                  'Uhub', 'Omega', 'pitch', 'r', 'chord', 'theta', 'precurve', 'precurveTip')
-        outputs = ('P', 'T', 'Q')
-        return inputs, outputs
+        outputs['T'] = self.T
+        outputs['Q'] = self.Q
+        outputs['P'] = self.P
 
 
-    def linearize(self, params, unknowns, resids):
+    def compute_partials(self, inputs, J):
 
         dP = self.dP
         dT = self.dT
         dQ = self.dQ
-
-        J = {}
+        
         J['P', 'precone'] = dP['dprecone']
         J['P', 'tilt'] = dP['dtilt']
         J['P', 'hubHt'] = dP['dhubHt']
@@ -208,20 +199,25 @@ class CCBladePower(Component):
         J['Q', 'precurve'] = dQ['dprecurve']
         J['Q', 'precurveTip'] = dQ['dprecurveTip']
 
-        return J
+        
 
 
     
-class CCBladeLoads(Component):
-    def __init__(self, naero, npower):
-        super(CCBladeLoads, self).__init__()
+class CCBladeLoads(ExplicitComponent):
+    def initialize(self):
+        self.options.declare('naero')
+        self.options.declare('npower')
+        
+    def setup(self, naero, npower):
+        self.naero = naero = self.options['naero']
+        npower = self.options['npower']
         """blade element momentum code"""
 
         # inputs
-        self.add_param('V_load', val=0.0, units='m/s', desc='hub height wind speed')
-        self.add_param('Omega_load', val=0.0, units='rpm', desc='rotor rotation speed')
-        self.add_param('pitch_load', val=0.0, units='deg', desc='blade pitch setting')
-        self.add_param('azimuth_load', val=0.0, units='deg', desc='blade azimuthal location')
+        self.add_input('V_load', val=0.0, units='m/s', desc='hub height wind speed')
+        self.add_input('Omega_load', val=0.0, units='rpm', desc='rotor rotation speed')
+        self.add_input('pitch_load', val=0.0, units='deg', desc='blade pitch setting')
+        self.add_input('azimuth_load', val=0.0, units='deg', desc='blade azimuthal location')
 
         # outputs
         self.add_output('loads_r', val=np.zeros(naero), units='m', desc='radial positions along blade going toward tip')
@@ -238,63 +234,69 @@ class CCBladeLoads(Component):
 
         
         # (potential) variables
-        self.add_param('r', val=np.zeros(naero), units='m', desc='radial locations where blade is defined (should be increasing and not go all the way to hub or tip)')
-        self.add_param('chord', val=np.zeros(naero), units='m', desc='chord length at each section')
-        self.add_param('theta', val=np.zeros(naero),  units='deg', desc='twist angle at each section (positive decreases angle of attack)')
-        self.add_param('Rhub', val=0.0, units='m', desc='hub radius')
-        self.add_param('Rtip', val=0.0, units='m', desc='tip radius')
-        self.add_param('hubHt', val=0.0, units='m', desc='hub height')
-        self.add_param('precone', val=0.0, desc='precone angle', units='deg')
-        self.add_param('tilt', val=0.0, desc='shaft tilt', units='deg')
-        self.add_param('yaw', val=0.0, desc='yaw error', units='deg')
+        self.add_input('r', val=np.zeros(naero), units='m', desc='radial locations where blade is defined (should be increasing and not go all the way to hub or tip)')
+        self.add_input('chord', val=np.zeros(naero), units='m', desc='chord length at each section')
+        self.add_input('theta', val=np.zeros(naero),  units='deg', desc='twist angle at each section (positive decreases angle of attack)')
+        self.add_input('Rhub', val=0.0, units='m', desc='hub radius')
+        self.add_input('Rtip', val=0.0, units='m', desc='tip radius')
+        self.add_input('hubHt', val=0.0, units='m', desc='hub height')
+        self.add_input('precone', val=0.0, desc='precone angle', units='deg')
+        self.add_input('tilt', val=0.0, desc='shaft tilt', units='deg')
+        self.add_input('yaw', val=0.0, desc='yaw error', units='deg')
 
         # TODO: I've not hooked up the gradients for these ones yet.
-        self.add_param('precurve', val=np.zeros(naero), units='m', desc='precurve at each section')
-        self.add_param('precurveTip', val=0.0, units='m', desc='precurve at tip')
+        self.add_input('precurve', val=np.zeros(naero), units='m', desc='precurve at each section')
+        self.add_input('precurveTip', val=0.0, units='m', desc='precurve at tip')
 
         # parameters
-        self.add_param('airfoils', val=[0]*naero, desc='CCAirfoil instances', pass_by_obj=True)
-        self.add_param('B', val=0, desc='number of blades', pass_by_obj=True)
-        self.add_param('rho', val=0.0, units='kg/m**3', desc='density of air')
-        self.add_param('mu', val=0.0, units='kg/(m*s)', desc='dynamic viscosity of air')
-        self.add_param('shearExp', val=0.0, desc='shear exponent')
-        self.add_param('nSector', val=4, desc='number of sectors to divide rotor face into in computing thrust and power', pass_by_obj=True)
-        self.add_param('tiploss', val=True, desc='include Prandtl tip loss model', pass_by_obj=True)
-        self.add_param('hubloss', val=True, desc='include Prandtl hub loss model', pass_by_obj=True)
-        self.add_param('wakerotation', val=True, desc='include effect of wake rotation (i.e., tangential induction factor is nonzero)', pass_by_obj=True)
-        self.add_param('usecd', val=True, desc='use drag coefficient in computing induction factors', pass_by_obj=True)
+        self.add_discrete_input('airfoils', val=[0]*naero, desc='CCAirfoil instances')
+        self.add_discrete_input('B', val=0, desc='number of blades')
+        self.add_input('rho', val=0.0, units='kg/m**3', desc='density of air')
+        self.add_input('mu', val=0.0, units='kg/(m*s)', desc='dynamic viscosity of air')
+        self.add_input('shearExp', val=0.0, desc='shear exponent')
+        self.add_discrete_input('nSector', val=4, desc='number of sectors to divide rotor face into in computing thrust and power')
+        self.add_discrete_input('tiploss', val=True, desc='include Prandtl tip loss model')
+        self.add_discrete_input('hubloss', val=True, desc='include Prandtl hub loss model')
+        self.add_discrete_input('wakerotation', val=True, desc='include effect of wake rotation (i.e., tangential induction factor is nonzero)')
+        self.add_discrete_input('usecd', val=True, desc='use drag coefficient in computing induction factors')
 
-        self.naero = naero
-        self.deriv_options['form'] = 'central'
-        self.deriv_options['step_calc'] = 'relative'
+        self.declare_partials('loads_r', ['r', 'Rhub', 'Rtip'])
+        self.declare_partials(['loads_Px', 'loads_Py'],
+                              ['r', 'chord', 'theta', 'Rhub', 'Rtip', 'hubHt', 'precone', 'tilt',
+                               'yaw', 'V_load', 'Omega_load', 'pitch_load', 'azimuth_load', 'precurve'])
+        self.declare_partials('loads_V', 'V_load')
+        self.declare_partials('loads_Omega', 'Omega_load')
+        self.declare_partials('loads_pitch', 'pitch_load')
+        self.declare_partials('loads_azimuth', 'azimuth_load')
+
         
-    def solve_nonlinear(self, params, unknowns, resids):
+    def compute(self, inputs, outputs):
 
-        self.r = params['r']
-        self.chord = params['chord']
-        self.theta = params['theta']
-        self.Rhub = params['Rhub']
-        self.Rtip = params['Rtip']
-        self.hubHt = params['hubHt']
-        self.precone = params['precone']
-        self.tilt = params['tilt']
-        self.yaw = params['yaw']
-        self.precurve = params['precurve']
-        self.precurveTip = params['precurveTip']
-        self.airfoils = params['airfoils']
-        self.B = params['B']
-        self.rho = params['rho']
-        self.mu = params['mu']
-        self.shearExp = params['shearExp']
-        self.nSector = params['nSector']
-        self.tiploss = params['tiploss']
-        self.hubloss = params['hubloss']
-        self.wakerotation = params['wakerotation']
-        self.usecd = params['usecd']
-        self.V_load = params['V_load']
-        self.Omega_load = params['Omega_load']
-        self.pitch_load = params['pitch_load']
-        self.azimuth_load = params['azimuth_load']
+        self.r = inputs['r']
+        self.chord = inputs['chord']
+        self.theta = inputs['theta']
+        self.Rhub = inputs['Rhub']
+        self.Rtip = inputs['Rtip']
+        self.hubHt = inputs['hubHt']
+        self.precone = inputs['precone']
+        self.tilt = inputs['tilt']
+        self.yaw = inputs['yaw']
+        self.precurve = inputs['precurve']
+        self.precurveTip = inputs['precurveTip']
+        self.airfoils = inputs['airfoils']
+        self.B = inputs['B']
+        self.rho = inputs['rho']
+        self.mu = inputs['mu']
+        self.shearExp = inputs['shearExp']
+        self.nSector = inputs['nSector']
+        self.tiploss = inputs['tiploss']
+        self.hubloss = inputs['hubloss']
+        self.wakerotation = inputs['wakerotation']
+        self.usecd = inputs['usecd']
+        self.V_load = inputs['V_load']
+        self.Omega_load = inputs['Omega_load']
+        self.pitch_load = inputs['pitch_load']
+        self.azimuth_load = inputs['azimuth_load']
 
 
         if len(self.precurve) == 0:
@@ -317,30 +319,22 @@ class CCBladeLoads(Component):
             = self.ccblade.distributedAeroLoads(self.V_load, self.Omega_load, self.pitch_load, self.azimuth_load)
 
         # concatenate loads at root/tip
-        unknowns['loads_r'] = self.r
+        outputs['loads_r'] = self.r
 
         # conform to blade-aligned coordinate system
-        unknowns['loads_Px'] = Np
-        unknowns['loads_Py'] = -Tp
-        unknowns['loads_Pz'] = 0*Np
+        outputs['loads_Px'] = Np
+        outputs['loads_Py'] = -Tp
+        outputs['loads_Pz'] = 0*Np
 
         # return other outputs needed
-        unknowns['loads_V'] = self.V_load
-        unknowns['loads_Omega'] = self.Omega_load
-        unknowns['loads_pitch'] = self.pitch_load
-        unknowns['loads_azimuth'] = self.azimuth_load
+        outputs['loads_V'] = self.V_load
+        outputs['loads_Omega'] = self.Omega_load
+        outputs['loads_pitch'] = self.pitch_load
+        outputs['loads_azimuth'] = self.azimuth_load
 
 
-    def list_deriv_vars(self):
-        inputs = ('r', 'chord', 'theta', 'Rhub', 'Rtip', 'hubHt', 'precone',
-                  'tilt', 'yaw', 'V_load', 'Omega_load', 'pitch_load', 'azimuth_load', 'precurve')
-        outputs = ('loads_r', 'loads_Px', 'loads_Py', 'loads_Pz', 'loads_V',
-                   'loads_Omega', 'loads_pitch', 'loads_azimuth')
 
-        return inputs, outputs
-
-
-    def linearize(self, params, unknowns, resids):
+    def compute_partials(self, inputs, J):
 
         dNp = self.dNp
         dTp = self.dTp
@@ -360,8 +354,7 @@ class CCBladeLoads(Component):
         dpitch[3*n+8] = 1.0
         dazimuth = np.zeros(4*n+10)
         dazimuth[3*n+9] = 1.0
-
-        J = {}
+        
         zero = np.zeros(self.naero)
         J['loads_r', 'r'] = dr_dr
         J['loads_r', 'Rhub'] = dr_dRhub
@@ -399,7 +392,7 @@ class CCBladeLoads(Component):
         J['loads_pitch', 'pitch_load'] = 1.0
         J['loads_azimuth', 'azimuth_load'] = 1.0
 
-        return J
+        
     
 '''
 def common_io(group, varspeed, varpitch):
@@ -407,24 +400,24 @@ def common_io(group, varspeed, varpitch):
     regulated = varspeed or varpitch
 
     # add inputs
-    group.add_param('npts_coarse_power_curve', val=20, desc='number of points to evaluate aero analysis at')
-    group.add_param('npts_spline_power_curve', val=200, desc='number of points to use in fitting spline to power curve')
-    group.add_param('AEP_loss_factor', val=1.0, desc='availability and other losses (soiling, array, etc.)')
+    group.add_input('npts_coarse_power_curve', val=20, desc='number of points to evaluate aero analysis at')
+    group.add_input('npts_spline_power_curve', val=200, desc='number of points to use in fitting spline to power curve')
+    group.add_input('AEP_loss_factor', val=1.0, desc='availability and other losses (soiling, array, etc.)')
     if varspeed:
-        group.add_param('control:Vin', units='m/s', desc='cut-in wind speed')
-        group.add_param('control:Vout', units='m/s', desc='cut-out wind speed')
-        group.add_param('control:ratedPower', units='W', desc='rated power')
-        group.add_param('control:minOmega', units='rpm', desc='minimum allowed rotor rotation speed')
-        group.add_param('control:maxOmega', units='rpm', desc='maximum allowed rotor rotation speed')
-        group.add_param('control:tsr', desc='tip-speed ratio in Region 2 (should be optimized externally)')
-        group.add_param('control:pitch', units='deg', desc='pitch angle in region 2 (and region 3 for fixed pitch machines)')
+        group.add_input('control:Vin', units='m/s', desc='cut-in wind speed')
+        group.add_input('control:Vout', units='m/s', desc='cut-out wind speed')
+        group.add_input('control:ratedPower', units='W', desc='rated power')
+        group.add_input('control:minOmega', units='rpm', desc='minimum allowed rotor rotation speed')
+        group.add_input('control:maxOmega', units='rpm', desc='maximum allowed rotor rotation speed')
+        group.add_input('control:tsr', desc='tip-speed ratio in Region 2 (should be optimized externally)')
+        group.add_input('control:pitch', units='deg', desc='pitch angle in region 2 (and region 3 for fixed pitch machines)')
     else:
-        group.add_param('control:Vin', units='m/s', desc='cut-in wind speed')
-        group.add_param('control:Vout', units='m/s', desc='cut-out wind speed')
-        group.add_param('control:ratedPower', units='W', desc='rated power')
-        group.add_param('control:Omega', units='rpm', desc='fixed rotor rotation speed')
-        group.add_param('control:pitch', units='deg', desc='pitch angle in region 2 (and region 3 for fixed pitch machines)')
-        group.add_param('control:npts', val=20, desc='number of points to evalute aero code to generate power curve')
+        group.add_input('control:Vin', units='m/s', desc='cut-in wind speed')
+        group.add_input('control:Vout', units='m/s', desc='cut-out wind speed')
+        group.add_input('control:ratedPower', units='W', desc='rated power')
+        group.add_input('control:Omega', units='rpm', desc='fixed rotor rotation speed')
+        group.add_input('control:pitch', units='deg', desc='pitch angle in region 2 (and region 3 for fixed pitch machines)')
+        group.add_input('control:npts', val=20, desc='number of points to evalute aero code to generate power curve')
 
 
     # # add slots (must replace)
@@ -512,7 +505,7 @@ def common_configure(group, varspeed, varpitch):
         # setup Brent method to find rated speed
         group.connect('control:Vin', 'brent.lower_bound')
         group.connect('control:Vout', 'brent.upper_bound')
-        group.brent.add_parameter('powercurve.Vrated', low=-1e-15, high=1e15)
+        group.brent.add_inputeter('powercurve.Vrated', low=-1e-15, high=1e15)
         group.brent.add_constraint('powercurve.residual = 0')
         group.brent.invalid_bracket_return = 1.0
 
@@ -544,52 +537,52 @@ def common_io_with_ccblade(group, varspeed, varpitch, cdf_type):
     regulated = varspeed or varpitch
 
     # add inputs
-    group.add_param('r_af', units='m', desc='locations where airfoils are defined on unit radius')
-    group.add_param('r_max_chord')
-    group.add_param('chord_sub', units='m', desc='chord at control points')
-    group.add_param('theta_sub', units='deg', desc='twist at control points')
-    group.add_param('Rhub', units='m', desc='hub radius')
-    group.add_param('Rtip', units='m', desc='tip radius')
-    group.add_param('hubHt', units='m')
-    group.add_param('precone', desc='precone angle', units='deg')
-    group.add_param('tilt', val=0.0, desc='shaft tilt', units='deg')
-    group.add_param('yaw', val=0.0, desc='yaw error', units='deg')
-    group.add_param('airfoil_files', desc='names of airfoil file')
-    group.add_param('idx_cylinder', desc='location where cylinder section ends on unit radius')
-    group.add_param('B', val=3, desc='number of blades')
-    group.add_param('rho', val=1.225, units='kg/m**3', desc='density of air')
-    group.add_param('mu', val=1.81206e-5, units='kg/m/s', desc='dynamic viscosity of air')
-    group.add_param('shearExp', val=0.2, desc='shear exponent')
-    group.add_param('nSector', val=4, desc='number of sectors to divide rotor face into in computing thrust and power')
-    group.add_param('tiploss', val=True, desc='include Prandtl tip loss model')
-    group.add_param('hubloss', val=True, desc='include Prandtl hub loss model')
-    group.add_param('wakerotation', val=True, desc='include effect of wake rotation (i.e., tangential induction factor is nonzero)')
-    group.add_param('usecd', val=True, desc='use drag coefficient in computing induction factors')
-    group.add_param('npts_coarse_power_curve', val=20, desc='number of points to evaluate aero analysis at')
-    group.add_param('npts_spline_power_curve', val=200, desc='number of points to use in fitting spline to power curve')
-    group.add_param('AEP_loss_factor', val=1.0, desc='availability and other losses (soiling, array, etc.)')
+    group.add_input('r_af', units='m', desc='locations where airfoils are defined on unit radius')
+    group.add_input('r_max_chord')
+    group.add_input('chord_sub', units='m', desc='chord at control points')
+    group.add_input('theta_sub', units='deg', desc='twist at control points')
+    group.add_input('Rhub', units='m', desc='hub radius')
+    group.add_input('Rtip', units='m', desc='tip radius')
+    group.add_input('hubHt', units='m')
+    group.add_input('precone', desc='precone angle', units='deg')
+    group.add_input('tilt', val=0.0, desc='shaft tilt', units='deg')
+    group.add_input('yaw', val=0.0, desc='yaw error', units='deg')
+    group.add_input('airfoil_files', desc='names of airfoil file')
+    group.add_input('idx_cylinder', desc='location where cylinder section ends on unit radius')
+    group.add_input('B', val=3, desc='number of blades')
+    group.add_input('rho', val=1.225, units='kg/m**3', desc='density of air')
+    group.add_input('mu', val=1.81206e-5, units='kg/m/s', desc='dynamic viscosity of air')
+    group.add_input('shearExp', val=0.2, desc='shear exponent')
+    group.add_input('nSector', val=4, desc='number of sectors to divide rotor face into in computing thrust and power')
+    group.add_input('tiploss', val=True, desc='include Prandtl tip loss model')
+    group.add_input('hubloss', val=True, desc='include Prandtl hub loss model')
+    group.add_input('wakerotation', val=True, desc='include effect of wake rotation (i.e., tangential induction factor is nonzero)')
+    group.add_input('usecd', val=True, desc='use drag coefficient in computing induction factors')
+    group.add_input('npts_coarse_power_curve', val=20, desc='number of points to evaluate aero analysis at')
+    group.add_input('npts_spline_power_curve', val=200, desc='number of points to use in fitting spline to power curve')
+    group.add_input('AEP_loss_factor', val=1.0, desc='availability and other losses (soiling, array, etc.)')
 
     if varspeed:
-        group.add_param('control:Vin', units='m/s', desc='cut-in wind speed')
-        group.add_param('control:Vout', units='m/s', desc='cut-out wind speed')
-        group.add_param('control:ratedPower', units='W', desc='rated power')
-        group.add_param('control:minOmega', units='rpm', desc='minimum allowed rotor rotation speed')
-        group.add_param('control:maxOmega', units='rpm', desc='maximum allowed rotor rotation speed')
-        group.add_param('control:tsr', desc='tip-speed ratio in Region 2 (should be optimized externally)')
-        group.add_param('control:pitch', units='deg', desc='pitch angle in region 2 (and region 3 for fixed pitch machines)')
+        group.add_input('control:Vin', units='m/s', desc='cut-in wind speed')
+        group.add_input('control:Vout', units='m/s', desc='cut-out wind speed')
+        group.add_input('control:ratedPower', units='W', desc='rated power')
+        group.add_input('control:minOmega', units='rpm', desc='minimum allowed rotor rotation speed')
+        group.add_input('control:maxOmega', units='rpm', desc='maximum allowed rotor rotation speed')
+        group.add_input('control:tsr', desc='tip-speed ratio in Region 2 (should be optimized externally)')
+        group.add_input('control:pitch', units='deg', desc='pitch angle in region 2 (and region 3 for fixed pitch machines)')
     else:
-        group.add_param('control:Vin', units='m/s', desc='cut-in wind speed')
-        group.add_param('control:Vout', units='m/s', desc='cut-out wind speed')
-        group.add_param('control:ratedPower', units='W', desc='rated power')
-        group.add_param('control:Omega', units='rpm', desc='fixed rotor rotation speed')
-        group.add_param('control:pitch', units='deg', desc='pitch angle in region 2 (and region 3 for fixed pitch machines)')
-        group.add_param('control:npts', val=20, desc='number of points to evalute aero code to generate power curve')
+        group.add_input('control:Vin', units='m/s', desc='cut-in wind speed')
+        group.add_input('control:Vout', units='m/s', desc='cut-out wind speed')
+        group.add_input('control:ratedPower', units='W', desc='rated power')
+        group.add_input('control:Omega', units='rpm', desc='fixed rotor rotation speed')
+        group.add_input('control:pitch', units='deg', desc='pitch angle in region 2 (and region 3 for fixed pitch machines)')
+        group.add_input('control:npts', val=20, desc='number of points to evalute aero code to generate power curve')
 
-    group.add_param('drivetrainType', val=DRIVETRAIN_TYPE['GEARED'])
-    group.add_param('cdf_mean_wind_speed', units='m/s', desc='mean wind speed of site cumulative distribution function')
+    group.add_input('drivetrainType', val=DRIVETRAIN_TYPE['GEARED'])
+    group.add_input('cdf_mean_wind_speed', units='m/s', desc='mean wind speed of site cumulative distribution function')
 
     if cdf_type == 'weibull':
-        group.add_param('weibull_shape_factor', desc='(shape factor of weibull distribution)')
+        group.add_input('weibull_shape_factor', desc='(shape factor of weibull distribution)')
 
     # outputs
     group.add_output('AEP', units='kW*h', desc='annual energy production')
@@ -706,8 +699,7 @@ class RotorAeroFSFP(Group):
 
         
 class RotorAeroVSVPWithCCBlade(Group):
-    def __init__(self, cdf_type='weibull'):
-        super(RotorAeroVSVPWithCCBlade, self).__init__()
+    def setup(self, cdf_type='weibull'):
         self.cdf_type = cdf_type
 
     def configure(self):
@@ -719,9 +711,8 @@ class RotorAeroVSVPWithCCBlade(Group):
 
 class RotorAeroVSFPWithCCBlade(Group):
 
-    def __init__(self, cdf_type='weibull'):
+    def setup(self, cdf_type='weibull'):
         self.cdf_type = cdf_type
-        super(RotorAeroVSFPWithCCBlade, self).__init__()
 
     def configure(self):
         varspeed = True
@@ -733,9 +724,8 @@ class RotorAeroVSFPWithCCBlade(Group):
 
 class RotorAeroFSVPWithCCBlade(Group):
 
-    def __init__(self, cdf_type='weibull'):
+    def setup(self, cdf_type='weibull'):
         self.cdf_type = cdf_type
-        super(RotorAeroFSVPWithCCBlade, self).__init__()
 
     def configure(self):
         varspeed = False
@@ -747,9 +737,8 @@ class RotorAeroFSVPWithCCBlade(Group):
 
 class RotorAeroFSFPWithCCBlade(Group):
 
-    def __init__(self, cdf_type='weibull'):
+    def setup(self, cdf_type='weibull'):
         self.cdf_type = cdf_type
-        super(RotorAeroFSFPWithCCBlade, self).__init__()
 
     def configure(self):
         varspeed = False
