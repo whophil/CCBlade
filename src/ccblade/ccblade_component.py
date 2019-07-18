@@ -48,7 +48,7 @@ class CCBladePower(ExplicitComponent):
         self.options.declare('naero')
         self.options.declare('npower')
         
-    def setup(self, naero, npower):
+    def setup(self):
         self.naero = naero = self.options['naero']
         npower = self.options['npower']
         """blade element momentum code"""
@@ -96,7 +96,7 @@ class CCBladePower(ExplicitComponent):
                                                'precurve', 'precurveTip'])
 
         
-    def compute(self, inputs, outputs):
+    def compute(self, inputs, outputs, discrete_inputs, discrete_outputs):
 
         self.r = inputs['r']
         self.chord = inputs['chord']
@@ -196,7 +196,7 @@ class CCBladeLoads(ExplicitComponent):
         self.options.declare('naero')
         self.options.declare('npower')
         
-    def setup(self, naero, npower):
+    def setup(self):
         self.naero = naero = self.options['naero']
         npower = self.options['npower']
         """blade element momentum code"""
@@ -218,8 +218,6 @@ class CCBladeLoads(ExplicitComponent):
         self.add_output('loads_Omega', val=0.0, units='rpm', desc='rotor rotation speed')
         self.add_output('loads_pitch', val=0.0, units='deg', desc='pitch angle')
         self.add_output('loads_azimuth', val=0.0, units='deg', desc='azimuthal angle')
-
-
         
         # (potential) variables
         self.add_input('r', val=np.zeros(naero), units='m', desc='radial locations where blade is defined (should be increasing and not go all the way to hub or tip)')
@@ -258,7 +256,7 @@ class CCBladeLoads(ExplicitComponent):
         self.declare_partials('loads_azimuth', 'azimuth_load')
 
         
-    def compute(self, inputs, outputs):
+    def compute(self, inputs, outputs, discrete_inputs, discrete_outputs):
 
         self.r = inputs['r']
         self.chord = inputs['chord']
@@ -271,16 +269,16 @@ class CCBladeLoads(ExplicitComponent):
         self.yaw = inputs['yaw']
         self.precurve = inputs['precurve']
         self.precurveTip = inputs['precurveTip']
-        self.airfoils = inputs['airfoils']
-        self.B = inputs['B']
+        self.airfoils = discrete_inputs['airfoils']
+        self.B = discrete_inputs['B']
         self.rho = inputs['rho']
         self.mu = inputs['mu']
         self.shearExp = inputs['shearExp']
-        self.nSector = inputs['nSector']
-        self.tiploss = inputs['tiploss']
-        self.hubloss = inputs['hubloss']
-        self.wakerotation = inputs['wakerotation']
-        self.usecd = inputs['usecd']
+        self.nSector = discrete_inputs['nSector']
+        self.tiploss = discrete_inputs['tiploss']
+        self.hubloss = discrete_inputs['hubloss']
+        self.wakerotation = discrete_inputs['wakerotation']
+        self.usecd = discrete_inputs['usecd']
         self.V_load = inputs['V_load']
         self.Omega_load = inputs['Omega_load']
         self.pitch_load = inputs['pitch_load']
