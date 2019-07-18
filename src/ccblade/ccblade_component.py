@@ -5,24 +5,12 @@ import numpy as np
 cosd = lambda x: np.cos(np.deg2rad(x))
 sind = lambda x: np.sin(np.deg2rad(x))
 
-# ---------------------
-# Base Components
-# ---------------------
-
-
-class GeometrySetupBase(ExplicitComponent):
-    """a base component that computes the rotor radius from the geometry"""
-    def setup(self):
-        self.add_output('R', val=0.0, units='m', desc='rotor radius')
-
-# ---------------------
-# Default Implementations of Base Classes
-# ---------------------
-class CCBladeGeometry(GeometrySetupBase):
+class CCBladeGeometry(ExplicitComponent):
     def setup(self):
         self.add_input('Rtip', val=0.0, units='m', desc='tip radius')
         self.add_input('precurveTip', val=0.0, units='m', desc='tip radius')
         self.add_input('precone', val=0.0, desc='precone angle', units='deg')
+        self.add_output('R', val=0.0, units='m', desc='rotor radius')
         self.add_output('diameter', val=0.0, units='m')
 
         self.declare_partials('R', '*')
@@ -105,7 +93,7 @@ class CCBladePower(ExplicitComponent):
 
         self.declare_partials(['P', 'T', 'Q'],['precone', 'tilt', 'hubHt', 'Rhub', 'Rtip', 'yaw',
                                                'Uhub', 'Omega', 'pitch', 'r', 'chord', 'theta',
-                                               'precurve', 'precurveTip')])
+                                               'precurve', 'precurveTip'])
 
         
     def compute(self, inputs, outputs):
