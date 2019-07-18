@@ -135,7 +135,6 @@ class CCBladePower(ExplicitComponent):
         outputs['Q'] = self.Q
         outputs['P'] = self.P
 
-
     def compute_partials(self, inputs, J):
 
         dP = self.dP
@@ -257,7 +256,6 @@ class CCBladeLoads(ExplicitComponent):
 
         
     def compute(self, inputs, outputs, discrete_inputs, discrete_outputs):
-
         self.r = inputs['r']
         self.chord = inputs['chord']
         self.theta = inputs['theta']
@@ -318,8 +316,6 @@ class CCBladeLoads(ExplicitComponent):
         outputs['loads_Omega'] = self.Omega_load
         outputs['loads_pitch'] = self.pitch_load
         outputs['loads_azimuth'] = self.azimuth_load
-
-
 
     def compute_partials(self, inputs, J):
 
