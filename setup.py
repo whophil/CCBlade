@@ -23,3 +23,4 @@ setup(
     ext_modules=[Extension('_bem', ['src/ccblade/bem.f90'], extra_compile_args=['-O2','-fPIC'])],
     zip_safe=False
 )
+
